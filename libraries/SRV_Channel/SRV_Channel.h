@@ -219,6 +219,8 @@ public:
         k_actuator4             = 187,
         k_actuator5             = 188,
         k_actuator6             = 189,
+        k_tiltMotorLeftVec      = 190,   // vectored thrust, left tilt with independent attitude vectoring
+        k_tiltMotorRightVec     = 191,   // vectored thrust, right tilt with independent attitude vectoring
         k_nr_aux_servo_functions         ///< This must be the last enum value (only add new values _before_ this one)
     } Function;
 
