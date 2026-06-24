@@ -785,7 +785,7 @@ void Tiltrotor::dual_axis_output(void)
     const float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle, 0, 100));
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
-    
+
     // forward flight: Axis 1 is at 90deg (motors fully forward)
     // use rudder for differential yaw vectoring via Axis 2
     // set Q_TILT_VEC_FWGAIN > 0 to enable; default 0 disables it
@@ -797,12 +797,14 @@ void Tiltrotor::dual_axis_output(void)
     const float scaler = (plane.control_mode == &plane.mode_manual) ? 1.0f :
                          (quadplane.FW_vector_throttle_scaling() / plane.get_speed_scaler());
     const float gain   = vectoring_gain_fw * scaler;
+    const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
+    const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
     const float rudder = SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / 4500.0f);
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
-                                    constrain_float( rudder * gain, -1.0f, 1.0f) * SERVO_MAX);
+                                constrain_float((elevator + aileron + rudder) * gain, -1.0f, 1.0f) * SERVO_MAX);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
-                                    constrain_float(-rudder * gain, -1.0f, 1.0f) * SERVO_MAX);
+                                constrain_float((elevator - aileron - rudder) * gain, -1.0f, 1.0f) * SERVO_MAX);
 }
 
 
