@@ -82,19 +82,19 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("WING_FLAP", 10, Tiltrotor, flap_angle_deg, 0),
 
-    // @Param: VEC_HVGAIN
+    // @Param: HVGAIN
     // @DisplayName: Hover tiltrotor vectoring gain
     // @Description: how strongly the attitude vectoring acts in hover (0-1)
     // @Range: 0 1
     // @User: Standard
-    AP_GROUPINFO("VEC_HVGAIN", 11, Tiltrotor, vectoring_gain_hvr, 0),
+    AP_GROUPINFO("HVGAIN", 11, Tiltrotor, vectoring_gain_hvr, 0),
 
-    // @Param: VEC_FWGAIN
+    // @Param: FWGAIN
     // @DisplayName: Fixed wing tiltrotor vectoring gain
     // @Description: how strongly the attitude vectoring acts in fixed wing flight (0-1)
     // @Range: 0 1
     // @User: Standard
-    AP_GROUPINFO("VEC_FWGAIN", 12, Tiltrotor, vectoring_gain_fw, 0),
+    AP_GROUPINFO("FWGAIN", 12, Tiltrotor, vectoring_gain_fw, 0),
 
 
     AP_GROUPEND
