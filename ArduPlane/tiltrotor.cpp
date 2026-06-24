@@ -745,6 +745,9 @@ void Tiltrotor::dual_axis_output(void)
         return;
     }
 
+    const float axis1_pos = -(current_tilt * SERVO_MAX);
+
+
     if (quadplane.in_vtol_mode() || quadplane.assisted_flight) {
         // run the multicopter attitude controller to populate servo outputs
         const float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
@@ -769,8 +772,13 @@ void Tiltrotor::dual_axis_output(void)
                                         constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
                                         constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);  
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);  
         return;
     }
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
 
     // forward flight: Axis 1 is at 90deg (motors fully forward)
     // use rudder for differential yaw vectoring via Axis 2
