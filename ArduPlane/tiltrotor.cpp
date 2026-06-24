@@ -313,6 +313,19 @@ void Tiltrotor::continuous_update(void)
     }
 #endif
 
+// *Stefard* remove this block for v2 final version,  this block prevents the tiltrotors from moving in Qmodes
+    
+    if (type == TILT_TYPE_DUAL_AXIS) {
+        if (quadplane.assisted_flight &&
+            transition->transition_state >= Tiltrotor_Transition::State::TIMER) {
+            slew(get_forward_flight_tilt());
+        } else {
+            slew(0);
+        }
+        return;
+    }
+// *Stefard* end of block
+
     if (!quadplane.assisted_flight &&
         quadplane.get_vfwd_method() == QuadPlane::ActiveFwdThr::NEW &&
         quadplane.is_flying_vtol())
