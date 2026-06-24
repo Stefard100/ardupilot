@@ -926,7 +926,8 @@ bool Tiltrotor::tilt_over_max_angle(void) const
 // throttle of forward flight motors including any tilting motors
 bool Tiltrotor::get_forward_throttle(float &throttle) const
 {
-    if (!enabled() || !_is_vectored) {
+    if (!enabled() || (!_is_vectored && type != TILT_TYPE_DUAL_AXIS)) {
+
         return false;
     }
     const float throttle_range = motors->thr_lin.get_spin_max() - motors->thr_lin.get_spin_min();
