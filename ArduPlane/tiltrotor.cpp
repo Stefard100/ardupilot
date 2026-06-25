@@ -40,7 +40,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Param: TYPE
     // @DisplayName: Tiltrotor type
     // @Description: This is the type of tiltrotor when TILT_MASK is non-zero. A continuous tiltrotor can tilt the rotors to any angle on demand. A binary tiltrotor assumes a retract style servo where the servo is either fully forward or fully up. In both cases the servo can't move faster than Q_TILT_RATE. A vectored yaw tiltrotor will use the tilt of the motors to control yaw in hover, Bicopter tiltrotor must use the tailsitter frame class (10)
-    // @Values: 0:Continuous,1:Binary,2:VectoredYaw,3:Bicopter
+    // @Values: 0:Continuous,1:Binary,2:VectoredYaw,3:Bicopter,4:DualAxis
     AP_GROUPINFO("TYPE", 5, Tiltrotor, type, TILT_TYPE_CONTINUOUS),
 
     // @Param: RATE_DN
@@ -82,6 +82,21 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("WING_FLAP", 10, Tiltrotor, flap_angle_deg, 0),
 
+    // @Param: HVGAIN
+    // @DisplayName: Hover tiltrotor vectoring gain
+    // @Description: how strongly the attitude vectoring acts in hover (0-1)
+    // @Range: 0 1
+    // @User: Standard
+    AP_GROUPINFO("HVGAIN", 11, Tiltrotor, vectoring_gain_hvr, 0),
+
+    // @Param: FWGAIN
+    // @DisplayName: Fixed wing tiltrotor vectoring gain
+    // @Description: how strongly the attitude vectoring acts in fixed wing flight (0-1)
+    // @Range: 0 1
+    // @User: Standard
+    AP_GROUPINFO("FWGAIN", 12, Tiltrotor, vectoring_gain_fw, 0),
+
+
     AP_GROUPEND
 };
 
@@ -98,7 +113,7 @@ Tiltrotor::Tiltrotor(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):quad
 void Tiltrotor::setup()
 {
 
-    if (!enable.configured() && ((tilt_mask != 0) || (type == TILT_TYPE_BICOPTER))) {
+    if (!enable.configured() && ((tilt_mask != 0) || (type == TILT_TYPE_BICOPTER) || (type == TILT_TYPE_DUAL_AXIS) )) {
         enable.set_and_save(1);
     }
 
@@ -114,7 +129,7 @@ void Tiltrotor::setup()
     // bicopter tiltrotors use throttle left and right as tilting motors, so they don't count in that case.
     _have_fw_motor = SRV_Channels::function_assigned(SRV_Channel::k_throttle) ||
                     ((SRV_Channels::function_assigned(SRV_Channel::k_throttleLeft) || SRV_Channels::function_assigned(SRV_Channel::k_throttleRight))
-                        && (type != TILT_TYPE_BICOPTER));
+                        && (type != TILT_TYPE_BICOPTER)  && (type != TILT_TYPE_DUAL_AXIS));
 
 
     // check if there are any permanent VTOL motors
@@ -130,6 +145,15 @@ void Tiltrotor::setup()
         // we will be using vectoring for yaw
         motors->disable_yaw_torque();
     }
+
+    if (type == TILT_TYPE_DUAL_AXIS) {
+    // Set the range for Axis 2 servo channels
+    SRV_Channels::set_angle(SRV_Channel::k_tiltMotorLeftVec,  4500);
+    SRV_Channels::set_angle(SRV_Channel::k_tiltMotorRightVec, 4500);
+    // Tell the motor library not to use yaw torque (we'll vector it)
+    motors->disable_yaw_torque();
+}
+
 
     if (tilt_mask != 0) {
         // setup tilt compensation
@@ -289,6 +313,8 @@ void Tiltrotor::continuous_update(void)
     }
 #endif
 
+
+
     if (!quadplane.assisted_flight &&
         quadplane.get_vfwd_method() == QuadPlane::ActiveFwdThr::NEW &&
         quadplane.is_flying_vtol())
@@ -394,6 +420,7 @@ void Tiltrotor::update(void)
     if (type == TILT_TYPE_VECTORED_YAW) {
         vectoring();
     }
+
 }
 
 #if HAL_LOGGING_ENABLED
@@ -710,6 +737,81 @@ void Tiltrotor::bicopter_output(void)
 }
 
 /*
+  control dual-axis tiltrotor. Axis 1 (V22-style 0-90 transition tilt)
+  is driven by continuous_update(). This function handles Axis 2
+  (independent attitude vectoring servos) called from servos.cpp.
+ */
+void Tiltrotor::dual_axis_output(void)
+{
+    if (type != TILT_TYPE_DUAL_AXIS || quadplane.motor_test.running) {
+        return;
+    }
+
+    const float axis1_pos = -(current_tilt * SERVO_MAX);
+
+    if (quadplane.in_vtol_mode() || quadplane.assisted_flight) {
+        const float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+        if (quadplane.assisted_flight) {
+            quadplane.hold_stabilize(throttle * 0.01f);
+            quadplane.motors_output(true);
+        } else {
+            quadplane.motors_output(false);
+        }
+
+        // in FW transition: also write stick throttle directly to ESCs
+        if (!quadplane.in_vtol_mode()) {
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
+        }
+
+        float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
+        float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
+        const float scaling = cosf(current_tilt * M_PI_2);
+        tilt_left  *= scaling * vectoring_gain_hvr;
+        tilt_right *= scaling * vectoring_gain_hvr;
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
+                                        constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
+                                        constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
+        return;
+    }
+
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
+
+    const float throttle = plane.control_mode->does_auto_throttle()
+    ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
+    : plane.get_throttle_input(true);
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle, 0, 100));
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
+
+    // forward flight: Axis 1 is at 90deg (motors fully forward)
+    // use rudder for differential yaw vectoring via Axis 2
+    // set Q_TILT_VEC_FWGAIN > 0 to enable; default 0 disables it
+    if (!is_positive(vectoring_gain_fw)) {
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,  0);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, 0);
+        return;
+    }
+    const float scaler = (plane.control_mode == &plane.mode_manual) ? 1.0f :
+                         (quadplane.FW_vector_throttle_scaling() / plane.get_speed_scaler());
+    const float gain   = vectoring_gain_fw * scaler;
+    const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
+    const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
+    const float rudder = SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / 4500.0f);
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
+                                constrain_float((elevator + aileron + rudder) * gain, -1.0f, 1.0f) * SERVO_MAX);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
+                                constrain_float((elevator - aileron - rudder) * gain, -1.0f, 1.0f) * SERVO_MAX);
+}
+
+
+/*
   when doing a forward transition of a tilt-vectored quadplane we use
   euler angle control to maintain good yaw. This updates the yaw
   target based on pilot input and target roll
@@ -827,7 +929,8 @@ bool Tiltrotor::tilt_over_max_angle(void) const
 // throttle of forward flight motors including any tilting motors
 bool Tiltrotor::get_forward_throttle(float &throttle) const
 {
-    if (!enabled() || !_is_vectored) {
+    if (!enabled() || (!_is_vectored && type != TILT_TYPE_DUAL_AXIS)) {
+
         return false;
     }
     const float throttle_range = motors->thr_lin.get_spin_max() - motors->thr_lin.get_spin_min();
